@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>待辦清單</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f0f2f5;
+      color: #333;
+      padding: 24px 16px;
+    }
+    .container { max-width: 720px; margin: 0 auto; }
+    h1 { font-size: 1.6rem; margin-bottom: 4px; }
+    .subtitle { color: #888; font-size: 0.9rem; margin-bottom: 24px; }
+
+    /* 新增表單 */
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 24px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    }
+    .card h2 { font-size: 1rem; margin-bottom: 14px; color: #555; }
+    .form-row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .form-row input[type="text"] {
+      flex: 1 1 200px;
+      padding: 10px 14px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 0.95rem;
+    }
+    .form-row input[type="date"] {
+      padding: 10px 14px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 0.95rem;
+    }
+    .btn-add {
+      padding: 10px 20px;
+      background: #06c755;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn-add:hover { background: #05b04a; }
+
+    /* 清單 */
+    .empty { text-align: center; color: #aaa; padding: 40px 0; font-size: 1rem; }
+    .todo-item {
+      background: #fff;
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .todo-item.urgent  { border-left: 4px solid #e74c3c; }
+    .todo-item.warning { border-left: 4px solid #f39c12; }
+    .todo-item.ok      { border-left: 4px solid #2ecc71; }
+    .todo-item.overdue { border-left: 4px solid #999; opacity: .7; }
+
+    .badge {
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 20px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .badge.urgent  { background: #fdecea; color: #c0392b; }
+    .badge.warning { background: #fef5e7; color: #d35400; }
+    .badge.ok      { background: #eafaf1; color: #1e8449; }
+    .badge.overdue { background: #f2f2f2; color: #888; }
+
+    .todo-info { flex: 1; }
+    .todo-content { font-size: 1rem; font-weight: 500; margin-bottom: 4px; }
+    .todo-meta { font-size: 0.82rem; color: #888; }
+
+    .btn-done {
+      padding: 7px 14px;
+      background: #fff;
+      color: #e74c3c;
+      border: 1px solid #e74c3c;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .btn-done:hover { background: #fdecea; }
+
+    .summary { color: #888; font-size: 0.85rem; margin-bottom: 14px; }
+
+    /* 定期提醒 */
+    .repeat-item {
+      background: #fff;
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      border-left: 4px solid #3498db;
+    }
+    .repeat-badge {
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 20px;
+      background: #ebf5fb;
+      color: #1a5276;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .form-row select {
+      padding: 10px 14px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      background: #fff;
+    }
+    .section-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 16px; color: #444; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>📋 待辦清單</h1>
+  <p class="subtitle">今天是 {{ today }}</p>
+
+  <div class="card">
+    <h2>＋ 新增待辦事項</h2>
+    <form action="/add" method="post">
+      <div class="form-row">
+        <input type="text" name="content" placeholder="事項內容" required>
+        <input type="date" name="due_date" required>
+        <button type="submit" class="btn-add">新增</button>
+      </div>
+    </form>
+  </div>
+
+  <p class="section-title">📋 待辦事項</p>
+  {% if todos %}
+    <p class="summary">共 {{ todos | length }} 筆未完成事項</p>
+    {% for todo in todos %}
+      {% if todo.days_left < 0 %}
+        {% set status = "overdue" %}
+        {% set label = "已逾期" %}
+      {% elif todo.days_left <= 3 %}
+        {% set status = "urgent" %}
+        {% set label = "剩 " ~ todo.days_left ~ " 天" %}
+      {% elif todo.days_left <= 7 %}
+        {% set status = "warning" %}
+        {% set label = "剩 " ~ todo.days_left ~ " 天" %}
+      {% else %}
+        {% set status = "ok" %}
+        {% set label = "剩 " ~ todo.days_left ~ " 天" %}
+      {% endif %}
+      <div class="todo-item {{ status }}">
+        <span class="badge {{ status }}">{{ label }}</span>
+        <div class="todo-info">
+          <div class="todo-content">{{ todo.content }}</div>
+          <div class="todo-meta">到期日：{{ todo.due_date }}</div>
+        </div>
+        <form action="/delete/{{ todo.id }}" method="post">
+          <button type="submit" class="btn-done">完成 ✓</button>
+        </form>
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="empty">目前沒有待辦事項 🎉</div>
+  {% endif %}
+
+  <!-- 定期提醒區塊 -->
+  <hr style="border:none;border-top:1px solid #e0e0e0;margin:32px 0 24px;">
+  <p class="section-title">🔔 定期提醒</p>
+
+  <div class="card">
+    <h2>＋ 新增定期提醒</h2>
+    <form action="/recurring/add" method="post" id="recurring-form">
+      <div class="form-row">
+        <input type="text" name="content" placeholder="提醒內容" required style="flex:2 1 200px;">
+        <select name="repeat_type" id="repeat_type" onchange="toggleFields()" style="flex:0 0 auto;">
+          <option value="weekly">每週</option>
+          <option value="monthly">每月</option>
+        </select>
+        <select name="day_of_week" id="field_weekly" style="flex:0 0 auto;">
+          <option value="0">週一</option>
+          <option value="1">週二</option>
+          <option value="2">週三</option>
+          <option value="3">週四</option>
+          <option value="4">週五</option>
+          <option value="5">週六</option>
+          <option value="6">週日</option>
+        </select>
+        <select name="day_of_month" id="field_monthly" style="flex:0 0 auto;display:none;">
+          {% for d in range(1, 32) %}
+            <option value="{{ d }}">{{ d }} 號</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn-add">新增</button>
+      </div>
+    </form>
+  </div>
+
+  {% if reminders %}
+    <p class="summary">共 {{ reminders | length }} 則定期提醒</p>
+    {% for r in reminders %}
+      <div class="repeat-item">
+        <span class="repeat-badge">{{ r.label }}</span>
+        <div class="todo-info">
+          <div class="todo-content">{{ r.content }}</div>
+        </div>
+        <form action="/recurring/delete/{{ r.id }}" method="post">
+          <button type="submit" class="btn-done">刪除 ✕</button>
+        </form>
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="empty">目前沒有定期提醒</div>
+  {% endif %}
+</div>
+
+<script>
+function toggleFields() {
+  const t = document.getElementById('repeat_type').value;
+  document.getElementById('field_weekly').style.display  = t === 'weekly'  ? '' : 'none';
+  document.getElementById('field_monthly').style.display = t === 'monthly' ? '' : 'none';
+}
+</script>
+</body>
+</html>
