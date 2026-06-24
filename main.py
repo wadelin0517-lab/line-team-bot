@@ -1,7 +1,8 @@
 import os
 import logging
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, datetime, timedelta
+from typing import List, Optional
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -13,9 +14,10 @@ from linebot.v3 import WebhookHandler
 from linebot.v3.messaging import ApiClient, Configuration, MessagingApi
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from linebot.v3.exceptions import InvalidSignatureError
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from database import init_db, get_db, Todo, RecurringReminder, SessionLocal
+from database import init_db, get_db, Todo, RecurringReminder, Member, SessionLocal
 from line_handler import handle_message
 from scheduler import start_scheduler
 
@@ -143,3 +145,85 @@ async def delete_recurring(reminder_id: int, db: Session = Depends(get_db)):
         db.delete(reminder)
         db.commit()
     return RedirectResponse(url="/", status_code=303)
+
+
+# ── LIFF API ──────────────────────────────────────────────────────────────────
+
+_OFFSET_DELTA: dict[str, timedelta] = {
+    "15m": timedelta(minutes=15),
+    "1h": timedelta(hours=1),
+    "1d": timedelta(days=1),
+}
+
+
+class CreateTodoRequest(BaseModel):
+    content: str
+    description: Optional[str] = None
+    due_date: str  # YYYY-MM-DD 或 YYYY-MM-DDTHH:MM:SS
+    created_by: str
+    notify_enabled: bool = False
+    notify_offset: Optional[str] = None  # 15m | 1h | 1d | custom
+    custom_notify_time: Optional[str] = None  # ISO datetime，notify_offset=custom 時使用
+    notify_targets: List[str] = []
+
+
+def _parse_due_datetime(due_date_str: str) -> datetime:
+    try:
+        return datetime.fromisoformat(due_date_str)
+    except ValueError:
+        return datetime.fromisoformat(due_date_str + "T00:00:00")
+
+
+def _calc_notify_time(
+    due_date_str: str,
+    notify_offset: str,
+    custom_notify_time: Optional[str],
+) -> datetime:
+    if notify_offset == "custom":
+        if not custom_notify_time:
+            raise HTTPException(status_code=422, detail="notify_offset=custom 時必須提供 custom_notify_time")
+        return datetime.fromisoformat(custom_notify_time)
+    delta = _OFFSET_DELTA.get(notify_offset)
+    if not delta:
+        raise HTTPException(status_code=422, detail=f"不支援的 notify_offset: {notify_offset}")
+    return _parse_due_datetime(due_date_str) - delta
+
+
+@app.post("/api/todos", status_code=201)
+async def api_create_todo(payload: CreateTodoRequest, db: Session = Depends(get_db)):
+    targets = payload.notify_targets if payload.notify_targets else [payload.created_by]
+
+    notify_time = None
+    if payload.notify_enabled and payload.notify_offset:
+        notify_time = _calc_notify_time(payload.due_date, payload.notify_offset, payload.custom_notify_time)
+
+    due_date_obj = _parse_due_datetime(payload.due_date).date()
+
+    todo = Todo(
+        content=payload.content,
+        description=payload.description,
+        due_date=due_date_obj,
+        created_by=payload.created_by,
+        notify_enabled=payload.notify_enabled,
+        notify_offset=payload.notify_offset,
+        notify_time=notify_time,
+        notify_targets=targets,
+    )
+    db.add(todo)
+    db.commit()
+    db.refresh(todo)
+    return {
+        "id": todo.id,
+        "content": todo.content,
+        "due_date": str(todo.due_date),
+        "notify_time": notify_time.isoformat() if notify_time else None,
+    }
+
+
+@app.get("/api/members")
+async def api_get_members(db: Session = Depends(get_db)):
+    members = db.query(Member).order_by(Member.display_name).all()
+    return [
+        {"line_user_id": m.line_user_id, "display_name": m.display_name or m.line_user_id}
+        for m in members
+    ]
