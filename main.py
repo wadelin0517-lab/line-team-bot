@@ -82,7 +82,10 @@ async def index(request: Request, db: Session = Depends(get_db)):
     todo_list = [
         {
             "id": t.id,
+            "title": t.title,
             "content": t.content,
+            "description": t.description,
+            "photo_url": t.photo_url,
             "due_date": str(t.due_date),
             "days_left": (t.due_date - today).days,
         }
@@ -105,7 +108,7 @@ async def add_todo(
     due_date: str = Form(...),
     db: Session = Depends(get_db),
 ):
-    todo = Todo(content=content, due_date=due_date)
+    todo = Todo(title=content, due_date=due_date)
     db.add(todo)
     db.commit()
     return RedirectResponse(url="/", status_code=303)
@@ -157,8 +160,10 @@ _OFFSET_DELTA: dict[str, timedelta] = {
 
 
 class CreateTodoRequest(BaseModel):
-    content: str
+    title: str
+    content: Optional[str] = None
     description: Optional[str] = None
+    photo_url: Optional[str] = None
     due_date: str  # YYYY-MM-DD 或 YYYY-MM-DDTHH:MM:SS
     created_by: str
     notify_enabled: bool = False
@@ -200,8 +205,10 @@ async def api_create_todo(payload: CreateTodoRequest, db: Session = Depends(get_
     due_date_obj = _parse_due_datetime(payload.due_date).date()
 
     todo = Todo(
+        title=payload.title,
         content=payload.content,
         description=payload.description,
+        photo_url=payload.photo_url,
         due_date=due_date_obj,
         created_by=payload.created_by,
         notify_enabled=payload.notify_enabled,
@@ -214,7 +221,10 @@ async def api_create_todo(payload: CreateTodoRequest, db: Session = Depends(get_
     db.refresh(todo)
     return {
         "id": todo.id,
+        "title": todo.title,
         "content": todo.content,
+        "description": todo.description,
+        "photo_url": todo.photo_url,
         "due_date": str(todo.due_date),
         "notify_time": notify_time.isoformat() if notify_time else None,
     }
