@@ -112,7 +112,7 @@ def handle_message(sender_id: str, text: str, reply_token: str, db: Session, mes
     if text.startswith("新增"):
         content, due_date = _parse_add(text)
         if content and due_date:
-            todo = Todo(content=content, due_date=due_date)
+            todo = Todo(title=content, due_date=due_date)
             db.add(todo)
             db.commit()
             db.refresh(todo)
@@ -140,7 +140,7 @@ def handle_message(sender_id: str, text: str, reply_token: str, db: Session, mes
                 days_left = (t.due_date - date.today()).days
                 emoji = _days_emoji(days_left)
                 lines.append(
-                    f"{emoji} [{t.id}] {t.content}\n"
+                    f"{emoji} [{t.id}] {t.title}\n"
                     f"    📅 {t.due_date}（剩 {days_left} 天）"
                 )
             reply = "\n".join(lines)
@@ -150,7 +150,7 @@ def handle_message(sender_id: str, text: str, reply_token: str, db: Session, mes
         if todo_id:
             todo = db.query(Todo).filter(Todo.id == todo_id).first()
             if todo:
-                content = todo.content
+                content = todo.title
                 db.delete(todo)
                 db.commit()
                 reply = f"✅ 已完成並刪除：{content}"
