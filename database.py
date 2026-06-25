@@ -25,8 +25,10 @@ class Todo(Base):
     __tablename__ = "todos"
 
     id = Column(Integer, primary_key=True, index=True)
-    content = Column(String, nullable=False)
+    title = Column(String, nullable=False)
+    content = Column(String, nullable=True)
     description = Column(String, nullable=True)
+    photo_url = Column(String, nullable=True)
     due_date = Column(Date, nullable=False)
     created_by = Column(String, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
