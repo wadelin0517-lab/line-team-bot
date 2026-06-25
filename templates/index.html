@@ -83,6 +83,7 @@
 
     .todo-info { flex: 1; }
     .todo-content { font-size: 1rem; font-weight: 500; margin-bottom: 4px; }
+    .todo-body { font-size: 0.9rem; color: #555; margin-bottom: 4px; }
     .todo-meta { font-size: 0.82rem; color: #888; }
 
     .btn-done {
@@ -167,8 +168,11 @@
       <div class="todo-item {{ status }}">
         <span class="badge {{ status }}">{{ label }}</span>
         <div class="todo-info">
-          <div class="todo-content">{{ todo.content }}</div>
+          <div class="todo-content">{{ todo.title }}</div>
+          {% if todo.content %}<div class="todo-body">{{ todo.content }}</div>{% endif %}
+          {% if todo.description %}<div class="todo-meta">{{ todo.description }}</div>{% endif %}
           <div class="todo-meta">到期日：{{ todo.due_date }}</div>
+          {% if todo.photo_url %}<img src="{{ todo.photo_url }}" alt="照片" style="max-width:100%;margin-top:8px;border-radius:8px;">{% endif %}
         </div>
         <form action="/delete/{{ todo.id }}" method="post">
           <button type="submit" class="btn-done">完成 ✓</button>

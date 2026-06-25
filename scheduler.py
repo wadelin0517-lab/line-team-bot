@@ -29,11 +29,14 @@ def check_and_notify():
             days_left = (todo.due_date - today).days
             if days_left in NOTIFY_DAYS:
                 label = NOTIFY_DAYS[days_left]
-                messages.append(
-                    f"⏰ 【{label}後到期】\n"
-                    f"📌 {todo.content}\n"
-                    f"📅 到期日：{todo.due_date}"
-                )
+                lines = [
+                    f"⏰ 【{label}後到期】",
+                    f"📌 {todo.title}",
+                    f"📅 到期日：{todo.due_date}",
+                ]
+                if todo.description:
+                    lines.append(f"💬 備註：{todo.description}")
+                messages.append("\n".join(lines))
 
         if not messages:
             logger.info("每日檢查完成，今天沒有需要通知的事項")
@@ -126,7 +129,10 @@ def check_and_send_notifications():
         for todo in todos:
             targets = todo.notify_targets if isinstance(todo.notify_targets, list) else \
                       (json.loads(todo.notify_targets) if todo.notify_targets else [])
-            line = f"【待辦提醒】{todo.content}\n到期日：{todo.due_date.strftime('%m/%d')}"
+            msg_lines = [f"【待辦提醒】{todo.title}", f"到期日：{todo.due_date.strftime('%m/%d')}"]
+            if todo.description:
+                msg_lines.append(f"備註：{todo.description}")
+            line = "\n".join(msg_lines)
             for user_id in targets:
                 per_user_messages[user_id].append(line)
 
