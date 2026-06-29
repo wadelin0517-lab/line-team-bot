@@ -11,7 +11,10 @@ from fastapi import FastAPI, Request, Form, Depends, HTTPException
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from linebot.v3 import WebhookHandler
-from linebot.v3.messaging import ApiClient, Configuration, MessagingApi
+from linebot.v3.messaging import (
+    ApiClient, Configuration, MessagingApi,
+    PushMessageRequest, TextMessage,
+)
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from linebot.v3.exceptions import InvalidSignatureError
 from pydantic import BaseModel
@@ -150,6 +153,13 @@ async def delete_recurring(reminder_id: int, db: Session = Depends(get_db)):
     return RedirectResponse(url="/", status_code=303)
 
 
+# ── LIFF 頁面 ─────────────────────────────────────────────────────────────────
+
+@app.get("/liff", response_class=HTMLResponse)
+async def liff_page(request: Request):
+    return templates.TemplateResponse("liff.html", {"request": request})
+
+
 # ── LIFF API ──────────────────────────────────────────────────────────────────
 
 _OFFSET_DELTA: dict[str, timedelta] = {
@@ -167,7 +177,8 @@ class CreateTodoRequest(BaseModel):
     due_date: str  # YYYY-MM-DD 或 YYYY-MM-DDTHH:MM:SS
     created_by: str
     notify_enabled: bool = False
-    notify_offset: Optional[str] = None  # 15m | 1h | 1d | custom
+    notify_immediate: bool = False  # True → 建立時直接推播，不走 scheduler
+    notify_offset: Optional[str] = None  # 15m | 1h | 1d | custom（排程提醒用）
     custom_notify_time: Optional[str] = None  # ISO datetime，notify_offset=custom 時使用
     notify_targets: List[str] = []
 
@@ -194,13 +205,49 @@ def _calc_notify_time(
     return _parse_due_datetime(due_date_str) - delta
 
 
+def _push_immediate_notification(todo: Todo, targets: List[str], db: Session) -> None:
+    """直接呼叫 LINE Push Message API 發送立即通知，繞過 scheduler。"""
+    from database import Member
+
+    if "all" in targets:
+        members = db.query(Member).all()
+        user_ids = [m.line_user_id for m in members]
+    else:
+        user_ids = list(targets)
+
+    if not user_ids:
+        logger.warning("立即通知：找不到任何收件人，略過")
+        return
+
+    lines = [f"【待辦通知】{todo.title}", f"到期日：{todo.due_date}"]
+    if todo.description:
+        lines.append(f"備註：{todo.description}")
+    msg_text = "\n".join(lines)
+
+    try:
+        with ApiClient(line_configuration) as api_client:
+            messaging_api = MessagingApi(api_client)
+            for uid in user_ids:
+                messaging_api.push_message(
+                    PushMessageRequest(to=uid, messages=[TextMessage(text=msg_text)])
+                )
+        todo.notified_at = datetime.now()
+        db.commit()
+        logger.info(f"立即通知已推播給 {len(user_ids)} 位使用者，todo_id={todo.id}")
+    except Exception as e:
+        logger.error(f"立即通知推播失敗 todo_id={todo.id}: {e}")
+
+
 @app.post("/api/todos", status_code=201)
 async def api_create_todo(payload: CreateTodoRequest, db: Session = Depends(get_db)):
     targets = payload.notify_targets if payload.notify_targets else [payload.created_by]
 
+    # notify_offset / notify_time 只給「設定提醒時間」路徑使用
     notify_time = None
-    if payload.notify_enabled and payload.notify_offset:
+    effective_offset = None
+    if payload.notify_enabled and not payload.notify_immediate and payload.notify_offset:
         notify_time = _calc_notify_time(payload.due_date, payload.notify_offset, payload.custom_notify_time)
+        effective_offset = payload.notify_offset
 
     due_date_obj = _parse_due_datetime(payload.due_date).date()
 
@@ -212,13 +259,17 @@ async def api_create_todo(payload: CreateTodoRequest, db: Session = Depends(get_
         due_date=due_date_obj,
         created_by=payload.created_by,
         notify_enabled=payload.notify_enabled,
-        notify_offset=payload.notify_offset,
+        notify_offset=effective_offset,
         notify_time=notify_time,
         notify_targets=targets,
     )
     db.add(todo)
     db.commit()
     db.refresh(todo)
+
+    if payload.notify_enabled and payload.notify_immediate:
+        _push_immediate_notification(todo, targets, db)
+
     return {
         "id": todo.id,
         "title": todo.title,

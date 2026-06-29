@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>新增待辦事項</title>
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green: #06C755;
+      --green-dark: #05b04a;
+      --bg: #f0f2f5;
+      --card: #fff;
+      --border: #e0e0e0;
+      --text: #222;
+      --muted: #888;
+      --danger: #e74c3c;
+      --radius: 12px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding-bottom: 40px;
+    }
+
+    .header {
+      background: var(--green);
+      color: #fff;
+      padding: 18px 20px 14px;
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: .02em;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .container { max-width: 520px; margin: 0 auto; padding: 16px 14px; }
+
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 18px 16px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.08);
+    }
+
+    label.field-label {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    label.field-label .required { color: var(--danger); margin-left: 2px; }
+
+    input[type="text"],
+    input[type="date"],
+    input[type="datetime-local"],
+    textarea {
+      width: 100%;
+      padding: 11px 13px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.97rem;
+      font-family: inherit;
+      color: var(--text);
+      background: #fff;
+      outline: none;
+      transition: border-color .15s;
+    }
+    input:focus, textarea:focus { border-color: var(--green); }
+    textarea { resize: vertical; min-height: 72px; }
+
+    /* Toggle switch */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .toggle-label { font-size: 1rem; font-weight: 500; }
+    .switch { position: relative; display: inline-block; width: 48px; height: 28px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; cursor: pointer;
+      inset: 0; background: #ccc; border-radius: 28px;
+      transition: .2s;
+    }
+    .slider::before {
+      content: "";
+      position: absolute;
+      width: 22px; height: 22px;
+      left: 3px; top: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: .2s;
+    }
+    .switch input:checked + .slider { background: var(--green); }
+    .switch input:checked + .slider::before { transform: translateX(20px); }
+
+    #notify-panel { margin-top: 16px; display: none; }
+
+    .section-title {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      margin-bottom: 8px;
+    }
+
+    /* Radio buttons */
+    .radio-group { display: flex; flex-direction: column; gap: 8px; }
+    .radio-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    .radio-item:has(input:checked) {
+      border-color: var(--green);
+      background: #f0fdf4;
+    }
+    .radio-item input[type="radio"] { accent-color: var(--green); width: 16px; height: 16px; }
+    .radio-item span { font-size: 0.95rem; }
+
+    /* Member checkboxes */
+    #member-selector { margin-top: 10px; display: none; }
+    .member-list { display: flex; flex-direction: column; gap: 6px; max-height: 160px; overflow-y: auto; }
+    .member-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.93rem;
+    }
+    .member-item input[type="checkbox"] { accent-color: var(--green); width: 15px; height: 15px; }
+
+    /* Custom time picker */
+    #custom-time-picker { margin-top: 10px; display: none; }
+
+    /* Photo upload */
+    .photo-upload-area {
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .15s;
+      position: relative;
+    }
+    .photo-upload-area:hover { border-color: var(--green); }
+    .photo-upload-area input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer;
+      width: 100%; height: 100%;
+    }
+    .upload-icon { font-size: 2rem; margin-bottom: 4px; }
+    .upload-hint { font-size: 0.85rem; color: var(--muted); }
+    #photo-preview {
+      display: none;
+      width: 100%;
+      max-height: 200px;
+      object-fit: cover;
+      border-radius: 8px;
+      margin-top: 10px;
+    }
+    #upload-status { font-size: 0.82rem; color: var(--muted); margin-top: 6px; min-height: 1.2em; }
+
+    /* Submit button */
+    .btn-submit {
+      width: 100%;
+      padding: 14px;
+      background: var(--green);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 1.05rem;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 4px;
+      transition: background .15s, opacity .15s;
+    }
+    .btn-submit:hover { background: var(--green-dark); }
+    .btn-submit:disabled { opacity: .6; cursor: not-allowed; }
+
+    /* Success state */
+    #success-msg {
+      display: none;
+      text-align: center;
+      padding: 60px 20px;
+    }
+    #success-msg .icon { font-size: 3.5rem; }
+    #success-msg .title { font-size: 1.2rem; font-weight: 700; margin-top: 12px; }
+    #success-msg .sub { font-size: 0.9rem; color: var(--muted); margin-top: 6px; }
+
+    /* Loading */
+    #loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 20px;
+      text-align: center;
+    }
+    #loading .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid var(--border);
+      border-top-color: var(--green);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .divider { height: 1px; background: var(--border); margin: 14px 0; }
+  </style>
+</head>
+<body>
+
+<div class="header">新增待辦事項</div>
+
+<div class="container">
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <p style="margin-top:14px;color:var(--muted);font-size:0.9rem;">初始化中…</p>
+  </div>
+
+  <form id="todo-form" style="display:none;" novalidate>
+
+    <!-- 標題 -->
+    <div class="card">
+      <label class="field-label" for="title">標題<span class="required">*</span></label>
+      <input type="text" id="title" placeholder="請輸入待辦事項標題" maxlength="100">
+    </div>
+
+    <!-- 詳細內容 -->
+    <div class="card">
+      <label class="field-label" for="content">詳細內容</label>
+      <textarea id="content" placeholder="選填，詳細說明" rows="3"></textarea>
+    </div>
+
+    <!-- 備註 -->
+    <div class="card">
+      <label class="field-label" for="description">備註</label>
+      <textarea id="description" placeholder="選填，補充說明" rows="2"></textarea>
+    </div>
+
+    <!-- 期限 -->
+    <div class="card">
+      <label class="field-label" for="due_date">期限</label>
+      <input type="date" id="due_date">
+    </div>
+
+    <!-- 照片上傳 -->
+    <div class="card">
+      <label class="field-label">照片</label>
+      <div class="photo-upload-area">
+        <input type="file" id="photo-input" accept="image/*">
+        <div class="upload-icon">📷</div>
+        <div class="upload-hint">點擊選擇照片</div>
+      </div>
+      <img id="photo-preview" alt="預覽">
+      <div id="upload-status"></div>
+    </div>
+
+    <!-- 通知設定 -->
+    <div class="card">
+      <div class="toggle-row">
+        <span class="toggle-label">通知設定</span>
+        <label class="switch">
+          <input type="checkbox" id="notify-toggle">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div id="notify-panel">
+        <div class="divider"></div>
+
+        <!-- 通知對象 -->
+        <div class="section-title">通知對象</div>
+        <div class="radio-group">
+          <label class="radio-item">
+            <input type="radio" name="notify_target_type" value="all" checked>
+            <span>全部成員</span>
+          </label>
+          <label class="radio-item">
+            <input type="radio" name="notify_target_type" value="specific">
+            <span>特定人員</span>
+          </label>
+        </div>
+
+        <div id="member-selector">
+          <div class="member-list" id="member-list">
+            <div style="color:var(--muted);font-size:0.85rem;padding:8px 0;">載入成員中…</div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- 通知時機 -->
+        <div class="section-title">通知時機</div>
+        <div class="radio-group">
+          <label class="radio-item">
+            <input type="radio" name="notify_timing" value="immediate" checked>
+            <span>建立後立即通知</span>
+          </label>
+          <label class="radio-item">
+            <input type="radio" name="notify_timing" value="scheduled">
+            <span>設定提醒時間</span>
+          </label>
+        </div>
+
+        <div id="custom-time-picker">
+          <label class="field-label" style="margin-top:10px;">提醒時間</label>
+          <input type="datetime-local" id="custom-notify-time">
+        </div>
+      </div>
+    </div>
+
+    <button type="submit" class="btn-submit" id="submit-btn">送出</button>
+  </form>
+
+  <div id="success-msg">
+    <div class="icon">✅</div>
+    <div class="title">已成功新增！</div>
+    <div class="sub">視窗即將關閉…</div>
+  </div>
+
+</div>
+
+<script>
+  const LIFF_ID        = "2010527914-eR2RcmE7";
+  const CLOUDINARY_CLOUD  = "line-team-bot";
+  const CLOUDINARY_PRESET = "line_bot_unsigned";
+
+  let liffUserId   = null;
+  let photoUrl     = null;
+  let membersReady = false;
+
+  // ── helpers ──────────────────────────────────────────────────────────────────
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function showForm() {
+    document.getElementById("loading").style.display  = "none";
+    document.getElementById("todo-form").style.display = "block";
+  }
+
+  // ── LIFF init ─────────────────────────────────────────────────────────────────
+
+  liff.init({ liffId: LIFF_ID })
+    .then(async () => {
+      if (!liff.isLoggedIn()) { liff.login(); return; }
+      try {
+        const profile = await liff.getProfile();
+        liffUserId = profile.userId;
+      } catch (e) { console.warn("getProfile failed", e); }
+      showForm();
+    })
+    .catch(err => {
+      console.error("LIFF init error", err);
+      showForm(); // fall through so the page is still usable in browser
+    });
+
+  // ── members ───────────────────────────────────────────────────────────────────
+
+  async function loadMembers() {
+    if (membersReady) return;
+    membersReady = true;
+    try {
+      const res     = await fetch("/api/members");
+      const members = await res.json();
+      const list    = document.getElementById("member-list");
+      if (members.length === 0) {
+        list.innerHTML = '<div style="color:var(--muted);font-size:0.85rem;padding:8px 0;">目前沒有成員資料</div>';
+        return;
+      }
+      list.innerHTML = members.map(m => `
+        <label class="member-item">
+          <input type="checkbox" name="member_cb" value="${escHtml(m.line_user_id)}">
+          ${escHtml(m.display_name || m.line_user_id)}
+        </label>`).join("");
+    } catch (e) {
+      document.getElementById("member-list").innerHTML =
+        '<div style="color:var(--danger);font-size:0.85rem;">載入成員失敗</div>';
+    }
+  }
+
+  // ── notification panel events ─────────────────────────────────────────────────
+
+  document.getElementById("notify-toggle").addEventListener("change", function () {
+    document.getElementById("notify-panel").style.display = this.checked ? "block" : "none";
+    if (this.checked) loadMembers();
+  });
+
+  document.querySelectorAll('input[name="notify_target_type"]').forEach(r => {
+    r.addEventListener("change", function () {
+      document.getElementById("member-selector").style.display =
+        this.value === "specific" ? "block" : "none";
+    });
+  });
+
+  document.querySelectorAll('input[name="notify_timing"]').forEach(r => {
+    r.addEventListener("change", function () {
+      document.getElementById("custom-time-picker").style.display =
+        this.value === "scheduled" ? "block" : "none";
+    });
+  });
+
+  // ── photo upload ──────────────────────────────────────────────────────────────
+
+  document.getElementById("photo-input").addEventListener("change", async function () {
+    const file = this.files[0];
+    if (!file) return;
+
+    const preview  = document.getElementById("photo-preview");
+    preview.src    = URL.createObjectURL(file);
+    preview.style.display = "block";
+
+    const statusEl = document.getElementById("upload-status");
+    statusEl.style.color = "var(--muted)";
+    statusEl.textContent = "上傳中…";
+    photoUrl = null;
+
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("upload_preset", CLOUDINARY_PRESET);
+
+    try {
+      const res = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`,
+        { method: "POST", body: fd }
+      );
+      if (!res.ok) throw new Error(`Cloudinary ${res.status}`);
+      const data = await res.json();
+      photoUrl = data.secure_url;
+      statusEl.style.color = "var(--green)";
+      statusEl.textContent  = "✓ 上傳完成";
+    } catch (e) {
+      statusEl.style.color = "var(--danger)";
+      statusEl.textContent  = "上傳失敗，請重試";
+      console.error(e);
+    }
+  });
+
+  // ── form submit ───────────────────────────────────────────────────────────────
+
+  document.getElementById("todo-form").addEventListener("submit", async function (e) {
+    e.preventDefault();
+
+    const title = document.getElementById("title").value.trim();
+    if (!title) {
+      alert("請填寫標題");
+      document.getElementById("title").focus();
+      return;
+    }
+
+    // Photo still uploading?
+    const photoInput = document.getElementById("photo-input");
+    if (photoInput.files.length > 0 && !photoUrl) {
+      const st = document.getElementById("upload-status").textContent;
+      if (st.includes("上傳中")) { alert("照片尚未上傳完成，請稍候再送出"); return; }
+    }
+
+    const content     = document.getElementById("content").value.trim()     || null;
+    const description = document.getElementById("description").value.trim() || null;
+    const dueDateVal  = document.getElementById("due_date").value;
+    const due_date    = dueDateVal || new Date().toISOString().slice(0, 10);
+
+    // ── notification ──
+    const notifyEnabled = document.getElementById("notify-toggle").checked;
+    let notify_targets  = [];
+    let notify_immediate = false;
+    let notify_offset    = null;
+    let custom_notify_time = null;
+
+    if (notifyEnabled) {
+      // targets
+      const targetType = document.querySelector('input[name="notify_target_type"]:checked')?.value;
+      if (targetType === "all") {
+        notify_targets = ["all"];
+      } else {
+        notify_targets = Array.from(
+          document.querySelectorAll('input[name="member_cb"]:checked')
+        ).map(cb => cb.value);
+        if (notify_targets.length === 0) {
+          alert("請勾選至少一位通知對象");
+          return;
+        }
+      }
+
+      // timing
+      const timing = document.querySelector('input[name="notify_timing"]:checked')?.value;
+      if (timing === "immediate") {
+        notify_immediate = true;          // backend sends LINE message right away
+      } else {
+        const pickedVal = document.getElementById("custom-notify-time").value;
+        if (!pickedVal) { alert("請選擇提醒時間"); return; }
+        notify_offset      = "custom";
+        // datetime-local gives YYYY-MM-DDTHH:MM; pad seconds so fromisoformat parses cleanly
+        custom_notify_time = pickedVal.length === 16 ? pickedVal + ":00" : pickedVal;
+      }
+    }
+
+    const payload = {
+      title,
+      content,
+      description,
+      photo_url:          photoUrl,
+      due_date,
+      created_by:         liffUserId || "unknown",
+      notify_enabled:     notifyEnabled,
+      notify_immediate,
+      notify_offset,
+      custom_notify_time,
+      notify_targets,
+    };
+
+    const btn = document.getElementById("submit-btn");
+    btn.disabled    = true;
+    btn.textContent = "送出中…";
+
+    try {
+      const res = await fetch("/api/todos", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`HTTP ${res.status}: ${body}`);
+      }
+
+      document.getElementById("todo-form").style.display  = "none";
+      document.getElementById("success-msg").style.display = "block";
+
+      setTimeout(() => { if (liff.isInClient()) liff.closeWindow(); }, 1800);
+    } catch (err) {
+      console.error("submit error", err);
+      alert("送出失敗，請重試\n" + err.message);
+      btn.disabled    = false;
+      btn.textContent = "送出";
+    }
+  });
+</script>
+</body>
+</html>
