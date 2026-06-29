@@ -444,18 +444,21 @@
     fd.append("upload_preset", CLOUDINARY_PRESET);
 
     try {
-      const res = await fetch(
+      const res  = await fetch(
         `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`,
         { method: "POST", body: fd }
       );
-      if (!res.ok) throw new Error(`Cloudinary ${res.status}`);
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`Cloudinary ${res.status}: ${body}`);
+      }
       const data = await res.json();
       photoUrl = data.secure_url;
       statusEl.style.color = "var(--green)";
       statusEl.textContent  = "✓ 上傳完成";
     } catch (e) {
       statusEl.style.color = "var(--danger)";
-      statusEl.textContent  = "上傳失敗，請重試";
+      statusEl.textContent  = `上傳失敗: ${e.message}`;
       console.error(e);
     }
   });
