@@ -11,12 +11,13 @@ AUTHORIZED_USER_IDS = {
     if uid.strip()
 }
 
+LIFF_URL = "https://liff.line.me/2010527914-eR2RcmE7"
+
 _WEEKDAY_MAP = {"一": 0, "二": 1, "三": 2, "四": 3, "五": 4, "六": 5, "日": 6, "天": 6}
 _WEEKDAY_NAMES = ["週一", "週二", "週三", "週四", "週五", "週六", "週日"]
 
 
 def _parse_recurring_add(text: str):
-    """解析「定期新增 每週X 內容」或「定期新增 每月X號 內容」"""
     m = re.match(r"^定期新增\s+每週([一二三四五六日天])\s+(.+)$", text)
     if m:
         return {
@@ -49,19 +50,7 @@ def _recurrence_label(r: RecurringReminder) -> str:
     return f"每月{r.day_of_month}號"
 
 
-def _parse_add(text: str):
-    """解析「新增 事項內容 YYYY-MM-DD」指令"""
-    match = re.match(r"^新增\s+(.+?)\s+(\d{4}-\d{2}-\d{2})$", text.strip())
-    if not match:
-        return None, None
-    try:
-        return match.group(1), date.fromisoformat(match.group(2))
-    except ValueError:
-        return None, None
-
-
 def _parse_complete(text: str):
-    """解析「完成 數字」指令"""
     match = re.match(r"^完成\s+(\d+)$", text.strip())
     return int(match.group(1)) if match else None
 
@@ -100,6 +89,13 @@ def _upsert_member(user_id: str, db: Session, messaging_api: MessagingApi) -> No
     db.commit()
 
 
+def _get_display_name(user_id: str, db: Session) -> str:
+    member = db.query(Member).filter(Member.line_user_id == user_id).first()
+    if member and member.display_name:
+        return member.display_name
+    return user_id[-6:]  # fallback: 末6碼
+
+
 def handle_message(sender_id: str, text: str, reply_token: str, db: Session, messaging_api: MessagingApi):
     _upsert_member(sender_id, db, messaging_api)
 
@@ -109,56 +105,46 @@ def handle_message(sender_id: str, text: str, reply_token: str, db: Session, mes
 
     text = text.strip()
 
-    if text.startswith("新增"):
-        content, due_date = _parse_add(text)
-        if content and due_date:
-            todo = Todo(title=content, due_date=due_date)
-            db.add(todo)
-            db.commit()
-            db.refresh(todo)
-            days_left = (due_date - date.today()).days
-            reply = (
-                f"✅ 已新增待辦事項\n"
-                f"📌 {content}\n"
-                f"📅 到期日：{due_date}\n"
-                f"⏳ 剩餘 {days_left} 天"
-            )
-        else:
-            reply = (
-                "格式錯誤！請使用：\n"
-                "新增 事項內容 YYYY-MM-DD\n"
-                "例如：新增 繳電費 2026-07-15"
-            )
+    # 新增 → 導向 LIFF 表單
+    if text in ("新增", "新增待辦", "add"):
+        reply = (
+            f"📝 請點選連結開啟新增表單：\n"
+            f"{LIFF_URL}"
+        )
 
+    # 清單
     elif text in ("清單", "查看", "list"):
         todos = db.query(Todo).order_by(Todo.due_date).all()
         if not todos:
             reply = "目前沒有待辦事項 🎉"
         else:
-            lines = ["📋 待辦事項清單：\n"]
+            lines = ["📋 團隊待辦清單：\n"]
             for t in todos:
                 days_left = (t.due_date - date.today()).days
                 emoji = _days_emoji(days_left)
+                creator = _get_display_name(t.created_by, db) if t.created_by else "?"
                 lines.append(
                     f"{emoji} [{t.id}] {t.title}\n"
-                    f"    📅 {t.due_date}（剩 {days_left} 天）"
+                    f"    📅 {t.due_date}（剩 {days_left} 天）by {creator}"
                 )
             reply = "\n".join(lines)
 
+    # 完成
     elif text.startswith("完成"):
         todo_id = _parse_complete(text)
         if todo_id:
             todo = db.query(Todo).filter(Todo.id == todo_id).first()
             if todo:
-                content = todo.title
+                title = todo.title
                 db.delete(todo)
                 db.commit()
-                reply = f"✅ 已完成並刪除：{content}"
+                reply = f"✅ 已完成並刪除：{title}"
             else:
                 reply = f"找不到編號 {todo_id} 的待辦事項"
         else:
             reply = "格式錯誤！請使用：完成 編號\n例如：完成 3"
 
+    # 定期新增
     elif text.startswith("定期新增"):
         parsed = _parse_recurring_add(text)
         if parsed:
@@ -180,6 +166,7 @@ def handle_message(sender_id: str, text: str, reply_token: str, db: Session, mes
                 "例如：定期新增 每月1號 繳房租"
             )
 
+    # 定期清單
     elif text in ("定期清單", "定期提醒"):
         reminders = db.query(RecurringReminder).order_by(RecurringReminder.id).all()
         if not reminders:
@@ -190,6 +177,7 @@ def handle_message(sender_id: str, text: str, reply_token: str, db: Session, mes
                 lines.append(f"[{r.id}] {r.content}\n    🗓 {_recurrence_label(r)}")
             reply = "\n".join(lines)
 
+    # 定期刪除
     elif text.startswith("定期刪除"):
         rid = _parse_recurring_delete(text)
         if rid:
@@ -207,9 +195,9 @@ def handle_message(sender_id: str, text: str, reply_token: str, db: Session, mes
     else:
         reply = (
             "可用指令：\n"
-            "📌 新增 事項內容 YYYY-MM-DD\n"
-            "📋 清單\n"
-            "✅ 完成 編號\n"
+            "📝 新增 → 開啟表單新增待辦\n"
+            "📋 清單 → 查看所有待辦\n"
+            "✅ 完成 編號 → 標記完成\n"
             "─────────────\n"
             "🔔 定期新增 每週X 提醒內容\n"
             "🔔 定期新增 每月X號 提醒內容\n"
