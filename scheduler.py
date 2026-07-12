@@ -106,8 +106,10 @@ def check_recurring_reminders():
 
 def check_and_send_notifications():
     """每分鐘執行：查詢 notify_time 落在當下時間窗口內、尚未發送的待辦通知，
-    合併同一收件人的多筆後一次推播，避免同人同時收到多則。"""
-    from database import SessionLocal, Todo
+    合併同一收件人的多筆後一次推播，避免同人同時收到多則。只有推播成功的收件人
+    才會讓對應待辦標記 notified_at；只要有任一收件人失敗，該待辦就保留 null，
+    留給下一輪（仍在時間窗口內）重試。"""
+    from database import SessionLocal, Todo, resolve_notify_targets
 
     now = datetime.now(TZ_TAIPEI).replace(tzinfo=None)
     window_start = now - timedelta(seconds=TIME_TOLERANCE_SECONDS)
@@ -126,9 +128,13 @@ def check_and_send_notifications():
             return
 
         per_user_messages = defaultdict(list)
+        todo_targets = {}
         for todo in todos:
-            targets = todo.notify_targets if isinstance(todo.notify_targets, list) else \
-                      (json.loads(todo.notify_targets) if todo.notify_targets else [])
+            raw_targets = todo.notify_targets if isinstance(todo.notify_targets, list) else \
+                          (json.loads(todo.notify_targets) if todo.notify_targets else [])
+            targets = resolve_notify_targets(raw_targets, db)
+            todo_targets[todo.id] = set(targets)
+
             msg_lines = [f"【待辦提醒】{todo.title}", f"到期日：{todo.due_date.strftime('%m/%d')}"]
             if todo.description:
                 msg_lines.append(f"備註：{todo.description}")
@@ -139,6 +145,7 @@ def check_and_send_notifications():
         if not per_user_messages:
             return
 
+        failed_users = set()
         configuration = Configuration(access_token=os.environ["LINE_CHANNEL_ACCESS_TOKEN"])
         with ApiClient(configuration) as api_client:
             messaging_api = MessagingApi(api_client)
@@ -150,13 +157,22 @@ def check_and_send_notifications():
                     )
                 except Exception as e:
                     logger.error(f"[通知失敗] user={user_id} error={e}")
+                    failed_users.add(user_id)
 
         sent_at = datetime.now(TZ_TAIPEI).replace(tzinfo=None)
+        notified_count = 0
         for todo in todos:
-            todo.notified_at = sent_at
+            targets = todo_targets[todo.id]
+            if targets and not (targets & failed_users):
+                todo.notified_at = sent_at
+                notified_count += 1
         db.commit()
 
-        logger.info(f"已推播通知給 {len(per_user_messages)} 位使用者，共 {len(todos)} 筆待辦")
+        success_users = len(per_user_messages) - len(failed_users)
+        summary = f"已推播通知給 {success_users} 位使用者，成功標記 {notified_count}/{len(todos)} 筆待辦"
+        if failed_users:
+            summary += f"；{len(failed_users)} 位使用者推播失敗，將於下次重試"
+        logger.info(summary)
     except Exception as e:
         logger.error(f"即時通知排程發生錯誤：{e}")
     finally:

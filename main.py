@@ -20,7 +20,7 @@ from linebot.v3.exceptions import InvalidSignatureError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from database import init_db, get_db, Todo, RecurringReminder, Member, SessionLocal
+from database import init_db, get_db, Todo, RecurringReminder, Member, SessionLocal, resolve_notify_targets
 from line_handler import handle_message
 from scheduler import start_scheduler
 
@@ -207,13 +207,7 @@ def _calc_notify_time(
 
 def _push_immediate_notification(todo: Todo, targets: List[str], db: Session) -> None:
     """直接呼叫 LINE Push Message API 發送立即通知，繞過 scheduler。"""
-    from database import Member
-
-    if "all" in targets:
-        members = db.query(Member).all()
-        user_ids = [m.line_user_id for m in members]
-    else:
-        user_ids = list(targets)
+    user_ids = resolve_notify_targets(targets, db)
 
     if not user_ids:
         logger.warning("立即通知：找不到任何收件人，略過")

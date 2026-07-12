@@ -59,6 +59,13 @@ class Member(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+def resolve_notify_targets(targets: list, db) -> list:
+    """展開 notify_targets 裡的 "all" 為目前所有 Member 的 line_user_id，其餘原樣保留。"""
+    if "all" in targets:
+        return [m.line_user_id for m in db.query(Member).all()]
+    return list(targets)
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
 
