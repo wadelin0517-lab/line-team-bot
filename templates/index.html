@@ -172,6 +172,7 @@
           {% if todo.content %}<div class="todo-body">{{ todo.content }}</div>{% endif %}
           {% if todo.description %}<div class="todo-meta">{{ todo.description }}</div>{% endif %}
           <div class="todo-meta">到期日：{{ todo.due_date }}</div>
+          <div class="todo-meta">負責人：{{ todo.assigned_to_name }}</div>
           {% if todo.photo_url %}<img src="{{ todo.photo_url }}" alt="照片" style="max-width:100%;margin-top:8px;border-radius:8px;">{% endif %}
         </div>
         <form action="/delete/{{ todo.id }}" method="post">

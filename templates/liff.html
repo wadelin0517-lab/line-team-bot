@@ -63,7 +63,8 @@
     input[type="text"],
     input[type="date"],
     input[type="datetime-local"],
-    textarea {
+    textarea,
+    select {
       width: 100%;
       padding: 11px 13px;
       border: 1.5px solid var(--border);
@@ -75,7 +76,7 @@
       outline: none;
       transition: border-color .15s;
     }
-    input:focus, textarea:focus { border-color: var(--green); }
+    input:focus, textarea:focus, select:focus { border-color: var(--green); }
     textarea { resize: vertical; min-height: 72px; }
 
     /* Toggle switch */
@@ -264,6 +265,14 @@
       <input type="date" id="due_date">
     </div>
 
+    <!-- 指派對象 -->
+    <div class="card">
+      <label class="field-label" for="assigned-to">指派對象</label>
+      <select id="assigned-to">
+        <option value="">未指派</option>
+      </select>
+    </div>
+
     <!-- 照片上傳 -->
     <div class="card">
       <label class="field-label">照片</label>
@@ -348,7 +357,7 @@
 
   let liffUserId   = null;
   let photoUrl     = null;
-  let membersReady = false;
+  let membersCache = null;
 
   // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -373,6 +382,7 @@
         liffUserId = profile.userId;
       } catch (e) { console.warn("getProfile failed", e); }
       showForm();
+      loadAssigneeOptions();
     })
     .catch(err => {
       console.error("LIFF init error", err);
@@ -381,26 +391,36 @@
 
   // ── members ───────────────────────────────────────────────────────────────────
 
-  async function loadMembers() {
-    if (membersReady) return;
-    membersReady = true;
+  async function fetchMembers() {
+    if (membersCache) return membersCache;
     try {
-      const res     = await fetch("/api/members");
-      const members = await res.json();
-      const list    = document.getElementById("member-list");
-      if (members.length === 0) {
-        list.innerHTML = '<div style="color:var(--muted);font-size:0.85rem;padding:8px 0;">目前沒有成員資料</div>';
-        return;
-      }
-      list.innerHTML = members.map(m => `
-        <label class="member-item">
-          <input type="checkbox" name="member_cb" value="${escHtml(m.line_user_id)}">
-          ${escHtml(m.display_name || m.line_user_id)}
-        </label>`).join("");
+      const res = await fetch("/api/members");
+      membersCache = await res.json();
     } catch (e) {
-      document.getElementById("member-list").innerHTML =
-        '<div style="color:var(--danger);font-size:0.85rem;">載入成員失敗</div>';
+      membersCache = [];
     }
+    return membersCache;
+  }
+
+  async function loadAssigneeOptions() {
+    const members = await fetchMembers();
+    const select = document.getElementById("assigned-to");
+    select.innerHTML = '<option value="">未指派</option>' +
+      members.map(m => `<option value="${escHtml(m.line_user_id)}">${escHtml(m.display_name || m.line_user_id)}</option>`).join("");
+  }
+
+  async function loadMembers() {
+    const members = await fetchMembers();
+    const list = document.getElementById("member-list");
+    if (members.length === 0) {
+      list.innerHTML = '<div style="color:var(--muted);font-size:0.85rem;padding:8px 0;">目前沒有成員資料</div>';
+      return;
+    }
+    list.innerHTML = members.map(m => `
+      <label class="member-item">
+        <input type="checkbox" name="member_cb" value="${escHtml(m.line_user_id)}">
+        ${escHtml(m.display_name || m.line_user_id)}
+      </label>`).join("");
   }
 
   // ── notification panel events ─────────────────────────────────────────────────
@@ -486,6 +506,7 @@
     const description = document.getElementById("description").value.trim() || null;
     const dueDateVal  = document.getElementById("due_date").value;
     const due_date    = dueDateVal || new Date().toISOString().slice(0, 10);
+    const assigned_to = document.getElementById("assigned-to").value || null;
 
     // ── notification ──
     const notifyEnabled = document.getElementById("notify-toggle").checked;
@@ -529,6 +550,7 @@
       photo_url:          photoUrl,
       due_date,
       created_by:         liffUserId || "unknown",
+      assigned_to,
       notify_enabled:     notifyEnabled,
       notify_immediate,
       notify_offset,

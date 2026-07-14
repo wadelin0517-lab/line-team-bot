@@ -31,6 +31,7 @@ class Todo(Base):
     photo_url = Column(String, nullable=True)
     due_date = Column(Date, nullable=False)
     created_by = Column(String, nullable=True)
+    assigned_to = Column(String, nullable=True)  # LINE user ID
     created_at = Column(DateTime, server_default=func.now())
     notify_enabled = Column(Boolean, default=False)
     notify_time = Column(DateTime, nullable=True)

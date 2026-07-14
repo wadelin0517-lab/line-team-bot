@@ -123,9 +123,11 @@ def handle_message(sender_id: str, text: str, reply_token: str, db: Session, mes
                 days_left = (t.due_date - date.today()).days
                 emoji = _days_emoji(days_left)
                 creator = _get_display_name(t.created_by, db) if t.created_by else "?"
+                assignee = _get_display_name(t.assigned_to, db) if t.assigned_to else "未指派"
                 lines.append(
                     f"{emoji} [{t.id}] {t.title}\n"
-                    f"    📅 {t.due_date}（剩 {days_left} 天）by {creator}"
+                    f"    📅 {t.due_date}（剩 {days_left} 天）by {creator}\n"
+                    f"    👤 指派：{assignee}"
                 )
             reply = "\n".join(lines)
 

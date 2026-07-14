@@ -78,10 +78,17 @@ def _recurrence_label(r: RecurringReminder) -> str:
     return f"每月{r.day_of_month}號"
 
 
+def _display_name(user_id: Optional[str], members_by_id: dict) -> str:
+    if not user_id:
+        return "未指派"
+    return members_by_id.get(user_id) or user_id[-6:]
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request, db: Session = Depends(get_db)):
     todos = db.query(Todo).order_by(Todo.due_date).all()
     today = date.today()
+    members_by_id = {m.line_user_id: m.display_name for m in db.query(Member).all()}
     todo_list = [
         {
             "id": t.id,
@@ -91,6 +98,7 @@ async def index(request: Request, db: Session = Depends(get_db)):
             "photo_url": t.photo_url,
             "due_date": str(t.due_date),
             "days_left": (t.due_date - today).days,
+            "assigned_to_name": _display_name(t.assigned_to, members_by_id),
         }
         for t in todos
     ]
@@ -176,6 +184,7 @@ class CreateTodoRequest(BaseModel):
     photo_url: Optional[str] = None
     due_date: str  # YYYY-MM-DD 或 YYYY-MM-DDTHH:MM:SS
     created_by: str
+    assigned_to: Optional[str] = None
     notify_enabled: bool = False
     notify_immediate: bool = False  # True → 建立時直接推播，不走 scheduler
     notify_offset: Optional[str] = None  # 15m | 1h | 1d | custom（排程提醒用）
@@ -252,6 +261,7 @@ async def api_create_todo(payload: CreateTodoRequest, db: Session = Depends(get_
         photo_url=payload.photo_url,
         due_date=due_date_obj,
         created_by=payload.created_by,
+        assigned_to=payload.assigned_to,
         notify_enabled=payload.notify_enabled,
         notify_offset=effective_offset,
         notify_time=notify_time,
@@ -271,6 +281,7 @@ async def api_create_todo(payload: CreateTodoRequest, db: Session = Depends(get_
         "description": todo.description,
         "photo_url": todo.photo_url,
         "due_date": str(todo.due_date),
+        "assigned_to": todo.assigned_to,
         "notify_time": notify_time.isoformat() if notify_time else None,
     }
 
